@@ -49,9 +49,14 @@ function clampBand(value: number): number {
   return Math.max(0, Math.min(9, Math.round(value * 2) / 2));
 }
 
+/** Nobody speaks faster than this; a higher figure means the timer was not running. */
+const MAX_PLAUSIBLE_WPM = 200;
+
 export interface SpeakingStats {
   words: number;
   wordsPerMinute: number;
+  /** True when the delivery rate had to be inferred because no speaking time was recorded. */
+  rateEstimated: boolean;
   uniqueRatio: number;
   markerCount: number;
   hesitationCount: number;
@@ -62,11 +67,15 @@ export interface SpeakingStats {
 export function analyseSpeaking(transcript: string, seconds: number): SpeakingStats {
   const stats = analyseText(transcript);
   const lower = transcript.toLowerCase();
-  const minutes = Math.max(seconds, 1) / 60;
   const complexMarkers = (transcript.match(/\b(which|that|because|although|while|if|when|so that)\b/gi) || []).length;
+  // A typed answer records no speaking time, so cap the rate instead of reporting a nonsense figure.
+  const minimumSeconds = (stats.words / MAX_PLAUSIBLE_WPM) * 60;
+  const rateEstimated = stats.words > 0 && seconds < minimumSeconds;
+  const minutes = Math.max(seconds, minimumSeconds, 1) / 60;
   return {
     words: stats.words,
-    wordsPerMinute: stats.words / minutes,
+    wordsPerMinute: stats.words ? stats.words / minutes : 0,
+    rateEstimated,
     uniqueRatio: stats.uniqueRatio,
     markerCount: DISCOURSE_MARKERS.filter((marker) => lower.includes(marker)).length,
     hesitationCount: HESITATIONS.filter((h) => lower.includes(h)).length,
@@ -83,6 +92,8 @@ export function fluencyBand(stats: SpeakingStats): number {
   if (stats.words >= 240 && stats.wordsPerMinute >= 110 && stats.markerCount >= 3) band = 7;
   if (stats.words >= 340 && stats.wordsPerMinute >= 125 && stats.markerCount >= 6) band = 7.5;
   band -= Math.min(1, stats.hesitationCount * 0.25);
+  // Without a recorded delivery time there is no evidence of fluent, unhesitating speech.
+  if (stats.rateEstimated) band = Math.min(band, 6);
   return clampBand(band);
 }
 
@@ -112,6 +123,7 @@ export function speakingGrammarBand(stats: SpeakingStats): number {
  */
 export function pronunciationBand(stats: SpeakingStats): number {
   if (stats.words === 0) return 0;
+  if (stats.rateEstimated) return 5;
   let band = 5;
   if (stats.wordsPerMinute >= 90 && stats.words >= 120) band = 6;
   if (stats.wordsPerMinute >= 115 && stats.words >= 220) band = 6.5;

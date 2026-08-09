@@ -69,6 +69,23 @@ export interface TextStats {
   linkerCount: number;
   academicCount: number;
   longWordRatio: number;
+  /** Share of sentences that merely repeat an earlier sentence. */
+  repetitionRatio: number;
+}
+
+function repetitionRatio(text: string): number {
+  const sentences = text
+    .split(/[.!?\n]+/)
+    .map((sentence) => sentence.toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim())
+    .filter((sentence) => sentence.split(' ').length >= 4);
+  if (sentences.length < 2) return 0;
+  const seen = new Set<string>();
+  let repeats = 0;
+  for (const sentence of sentences) {
+    if (seen.has(sentence)) repeats += 1;
+    seen.add(sentence);
+  }
+  return repeats / sentences.length;
 }
 
 export function analyseText(text: string): TextStats {
@@ -88,11 +105,18 @@ export function analyseText(text: string): TextStats {
     linkerCount: LINKERS.filter((linker) => lower.includes(linker)).length,
     academicCount: ACADEMIC_WORDS.filter((word) => lower.includes(word)).length,
     longWordRatio: cleaned.length ? cleaned.filter((w) => w.length >= 7).length / cleaned.length : 0,
+    repetitionRatio: repetitionRatio(trimmed),
   };
 }
 
 function clampBand(value: number): number {
   return Math.max(0, Math.min(9, Math.round(value * 2) / 2));
+}
+
+/** Up to a 3 band deduction once most of the answer is copied from itself. */
+function repetitionPenalty(stats: TextStats): number {
+  if (stats.repetitionRatio <= 0.15) return 0;
+  return Math.min(3, (stats.repetitionRatio - 0.15) * 4);
 }
 
 /** Rewards hitting the word count and covering the required content points. */
@@ -114,6 +138,8 @@ export function taskAchievementBand(stats: TextStats, task: WritingTask, text: s
   ).length;
   band += covered >= 3 ? 0.5 : covered === 0 ? -0.5 : 0;
   if (ratio < 0.5) band -= 1;
+  // Padding the answer with repeated sentences does not develop the task.
+  band -= repetitionPenalty(stats);
   return clampBand(band);
 }
 
@@ -125,6 +151,7 @@ export function coherenceBand(stats: TextStats): number {
   if (stats.paragraphs >= 4 && stats.linkerCount >= 5) band = 7;
   if (stats.paragraphs >= 4 && stats.linkerCount >= 8 && stats.sentences >= 14) band = 7.5;
   if (stats.averageSentenceLength > 32 || stats.averageSentenceLength < 8) band -= 0.5;
+  band -= repetitionPenalty(stats);
   return clampBand(band);
 }
 
@@ -135,6 +162,7 @@ export function lexicalBand(stats: TextStats): number {
   if (stats.uniqueRatio >= 0.42 && stats.academicCount >= 3) band = 6;
   if (stats.uniqueRatio >= 0.48 && stats.academicCount >= 6) band = 7;
   if (stats.uniqueRatio >= 0.55 && stats.academicCount >= 9 && stats.longWordRatio >= 0.2) band = 7.5;
+  band -= repetitionPenalty(stats);
   return clampBand(band);
 }
 

@@ -104,7 +104,9 @@ function gradeSpeaking(answers: AttemptAnswers['speaking']): SectionResult {
     {
       name: 'Fluency and Coherence',
       band: fluencyBand(stats),
-      comment: `${stats.words} words at about ${stats.wordsPerMinute.toFixed(0)} words per minute.`,
+      comment: stats.rateEstimated
+        ? `${stats.words} words, but no speaking time was recorded, so fluency is capped at band 6. Record your answer aloud for a fluency score.`
+        : `${stats.words} words at about ${stats.wordsPerMinute.toFixed(0)} words per minute.`,
     },
     {
       name: 'Lexical Resource',

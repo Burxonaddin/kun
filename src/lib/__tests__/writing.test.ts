@@ -69,6 +69,20 @@ describe('writing criteria bands', () => {
     }
   });
 
+  it('penalises an answer padded with repeated sentences', () => {
+    const padded = 'The chart shows a clear increase in spending. This is a significant trend.\n\n'.repeat(40);
+    const stats = analyseText(padded);
+    expect(stats.repetitionRatio).toBeGreaterThan(0.9);
+    expect(stats.words).toBeGreaterThan(400);
+    expect(taskAchievementBand(stats, task, padded)).toBeLessThanOrEqual(4);
+    expect(coherenceBand(stats)).toBeLessThanOrEqual(3);
+    expect(lexicalBand(stats)).toBeLessThanOrEqual(3);
+  });
+
+  it('does not treat a genuine answer as repetitive', () => {
+    expect(analyseText(ESSAY).repetitionRatio).toBe(0);
+  });
+
   it('marks bands in half-band steps only', () => {
     const stats = analyseText(ESSAY);
     const band = coherenceBand(stats);
@@ -86,6 +100,17 @@ describe('speaking analysis', () => {
     expect(stats.words).toBeGreaterThan(50);
     expect(stats.wordsPerMinute).toBeGreaterThan(stats.words);
     expect(stats.markerCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('caps the reported rate and the fluency band when no speaking time was recorded', () => {
+    const typed = analyseSpeaking(speech, 0);
+    expect(typed.rateEstimated).toBe(true);
+    expect(typed.wordsPerMinute).toBeLessThanOrEqual(200);
+    expect(fluencyBand(typed)).toBeLessThanOrEqual(6);
+    expect(pronunciationBand(typed)).toBe(5);
+
+    const spoken = analyseSpeaking(speech, 45);
+    expect(spoken.rateEstimated).toBe(false);
   });
 
   it('gives zero for silence', () => {
